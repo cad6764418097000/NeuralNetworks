@@ -2,19 +2,19 @@ const FOLLOWER_SIZE = 20; // Cannot be a negative value, denotes the trangle siz
 const FOLLOWER_SPEED = 10;
 
 const TARGET_SIZE = 20;
-const TARGET_LOCATION = [100, 100];
+var TARGET_LOCATION = [100, 200];
 
 const FPS = 4; // Frames per second drawn
 
 // Neural Network parameters
 const NUM_INPUTS = 5;   // followerx folowery targetx target y ship angle
-const NUM_HIDDEN = 15;
+const NUM_HIDDEN = 20;
 const NUM_OUTPUTS = 1; // angle
 const NUM_SAMPLES = 100000;
 const OUTPUT_LEFT = 0; // expected nerual output for truning left anf right
 const OUTPUT_RIGHT = 1;
-const OUTPUT_THRESHOLD = 0.4; // How close the prediction must be to commit (error)
-const ROTATION_INCREMENT = 100; //How fast the ship should rotate
+const OUTPUT_THRESHOLD = 0.2; // How close the prediction must be to commit (error)
+const ROTATION_INCREMENT = 220; //How fast the ship should rotate
 var canvas = document.getElementById("canvas");
 
 var testPoints = [];
@@ -58,21 +58,23 @@ class Follower{
 
   // Uses the rotation and position to draw the follower as a triangle
   draw(){
+    var angle = -this.angle + Math.PI/2;
+
     ctx.beginPath();
     const x1 = this._x - FOLLOWER_SIZE / 2;
     const y1 = this._y + FOLLOWER_SIZE / 2;
-    const rot1 = rotateAboutPoint(x1, y1, this._x, this._y, this._angle);
+    const rot1 = rotateAboutPoint(x1, y1, this._x, this._y, angle);
     ctx.moveTo(rot1[0], rot1[1]);
 
     const x2 = this._x + FOLLOWER_SIZE / 2;
     const y2 = this._y + FOLLOWER_SIZE / 2;
-    const rot2 = rotateAboutPoint(x2, y2, this._x, this._y, this._angle);
+    const rot2 = rotateAboutPoint(x2, y2, this._x, this._y, angle);
     ctx.lineTo(rot2[0], rot2[1]);
 
     var radius = Math.sqrt(Math.pow(FOLLOWER_SIZE / 2, 2) * 2);
     const x3 = this.x;
     const y3 = -radius * Math.sin(Math.PI/2) + this._y;
-    const rot3 = rotateAboutPoint(x3, y3, this._x, this._y, this._angle);
+    const rot3 = rotateAboutPoint(x3, y3, this._x, this._y, angle);
     ctx.lineTo(rot3[0], rot3[1]);
 
     ctx.fill();
@@ -85,7 +87,7 @@ class Follower{
     }
   }
   moveForward(){
-    const angle = this._angle - Math.PI/ 2;
+    const angle = -this._angle;
     this._x += FOLLOWER_SPEED * Math.cos(angle);
     this._y += FOLLOWER_SPEED * Math.sin(angle);
   }
@@ -131,7 +133,6 @@ var n1 = new Follower(400,400, d);
 
 var t = new Target(TARGET_LOCATION[0],TARGET_LOCATION[1]);
 
-
 function animate() {
     setTimeout(function() {
         requestAnimationFrame(animate);
@@ -139,10 +140,12 @@ function animate() {
 
 
 
+
       // Make a prediction from the NeuralNetwork
       let fx = n1.x;
       let fy = n1.y;
       let fa = n1.angle;
+      console.log(fa);
       let tx = t.x;
       let ty = t.y;
       let angle = angleToPoint(fx, fy, fa, tx, ty);
@@ -153,11 +156,11 @@ function animate() {
       let dLeft = Math.abs(predict - OUTPUT_LEFT);
       let dRight = Math.abs(predict - OUTPUT_RIGHT);
       if (dLeft < OUTPUT_THRESHOLD) {
-          //n1.rotate(false);
+          n1.rotate(false);
       } else if (dRight < OUTPUT_THRESHOLD) {
-          //n1.rotate(true);
+        n1.rotate(true);
       } else {
-          //n1.rot = 0; // stop rotating
+          n1.rot = 0; // stop rotating
       }
 
       n1.manageShipAngle();
@@ -202,6 +205,7 @@ function angleToPoint(x, y, bearing, targetX, targetY) {
   let diff = bearing - angleToTarget;
   return (diff + Math.PI * 2) % (Math.PI * 2);
 }
+
 console.log(angleToPoint(0, 0, 0, 0, 10));
 function normalizeInput(fx, fy, fa, tx, ty){
   // normalize the values to inbetween 0 and 1
@@ -245,15 +249,22 @@ for (let i = 0; i < NUM_SAMPLES; i++) {
   // determine the direction to turn
   let direction = angle > Math.PI ? OUTPUT_LEFT : OUTPUT_RIGHT;
 
+
+
+// Usewd for testing training data
+/*
   if(i % 10000 == 0){
-    testPoints.push([fx, fy, "red", ""]);
-    var data = " a:" + fa+ " output " + Math.round(angle) +" d: " + direction;
+    //testPoints.push([fx, fy, "red", ""]);
+    var data = " a:" + fa+ " output " + angle +" d: " + direction;
     testPoints.push([tx, ty, "blue", data]);
-    console.log("f: ("+ fx + ", " + fy + ")  t: " + tx + ", " + ty + ") ");
-    console.log("angle: " + angle);
-    console.log("d: " + direction);
+    //console.log("f: ("+ fx + ", " + fy + ")  t: " + tx + ", " + ty + ") ");
+    //console.log("angle: " + angle);
+    //console.log("d: " + direction);
 
   }
+*/
+
+
   // train the Network
   nn.train(normalizeInput(fx, fy, fa, tx, ty), [direction]);
 }
@@ -277,3 +288,17 @@ function testPoint(x,y, color, data){
 
   }
 }
+
+/*
+console.log("TESTS: ");
+var test1 = angleToPoint(0, 0, 0, 10, 10); // should be under pi
+alert(test1);
+var test2 = angleToPoint(0, 0, 0, -10, -10); //should be over pi
+alert(test2);
+var test3 = angleToPoint(0, 0, 0, 0, -10); // should be over pi
+alert(test3);
+var test4 = angleToPoint(10, 10, 0, 20, 20); // should be under pi
+alert(test4);
+var test5 = angleToPoint(0, 0, 0, 10, 10);
+alert(test5);
+*/
