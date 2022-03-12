@@ -2,23 +2,31 @@ const FOLLOWER_SIZE = 20; // Cannot be a negative value, denotes the trangle siz
 const FOLLOWER_SPEED = 10;
 
 const TARGET_SIZE = 20;
-const TARGET_LOCATION = [600, 100];
+const TARGET_LOCATION = [100, 100];
 
-const FPS = 15; // Frames per second drawn
+const FPS = 4; // Frames per second drawn
 
 // Neural Network parameters
-const NUM_INPUTS = 2;
-const NUM_HIDDEN = 5
-const NUM_OUTPUTS = 1;
-
+const NUM_INPUTS = 5;   // followerx folowery targetx target y ship angle
+const NUM_HIDDEN = 15;
+const NUM_OUTPUTS = 1; // angle
+const NUM_SAMPLES = 100000;
+const OUTPUT_LEFT = 0; // expected nerual output for truning left anf right
+const OUTPUT_RIGHT = 1;
+const OUTPUT_THRESHOLD = 0.4; // How close the prediction must be to commit (error)
+const ROTATION_INCREMENT = 100; //How fast the ship should rotate
 var canvas = document.getElementById("canvas");
+
+var testPoints = [];
+
 var ctx = canvas.getContext("2d");
 
 class Follower{
-  constructor(x, y, angle){
+  constructor(x, y, angle, rot = 0){
     this._x = x;
     this._y = y;
     this._angle = angle;
+    this._rot = rot;
   }
 
   get x(){
@@ -40,6 +48,12 @@ class Follower{
   }
   set angle(angle){
     this._angle = angle;
+  }
+  get rot(){
+    return this._rot;
+  }
+  set rot(angle){
+    this._rot = angle;
   }
 
   // Uses the rotation and position to draw the follower as a triangle
@@ -63,11 +77,21 @@ class Follower{
 
     ctx.fill();
   }
-
+   manageShipAngle(){ // keeps the ship angle between 0 and 360
+    if(this.angle < 0){
+      this.angle += (Math.PI * 2);
+    }else if(this.angle > Math.PI * 2){
+      this.angle -= (Math.PI * 2);
+    }
+  }
   moveForward(){
     const angle = this._angle - Math.PI/ 2;
     this._x += FOLLOWER_SPEED * Math.cos(angle);
     this._y += FOLLOWER_SPEED * Math.sin(angle);
+  }
+  rotate(right) {
+    let sign = right ? -1 : 1;
+    this.rot = ROTATION_INCREMENT / 180 * Math.PI / FPS * sign;
   }
 }
 
@@ -102,9 +126,8 @@ class Target{
 }
 
 
-var r = 90;
-var d = r * Math.PI/180;
-var n1 = new Follower(50,50,d);
+let d = 0;
+var n1 = new Follower(400,400, d);
 
 var t = new Target(TARGET_LOCATION[0],TARGET_LOCATION[1]);
 
@@ -116,16 +139,41 @@ function animate() {
 
 
 
-      n1.angle += 0.3;
-      n1.moveForward();
+      // Make a prediction from the NeuralNetwork
+      let fx = n1.x;
+      let fy = n1.y;
+      let fa = n1.angle;
+      let tx = t.x;
+      let ty = t.y;
+      let angle = angleToPoint(fx, fy, fa, tx, ty);
+      let predict = nn.feedForward(normalizeInput(fx, fy, fa, tx, ty)).data[0][0];
+      console.log(predict);
+
+      // make a turn
+      let dLeft = Math.abs(predict - OUTPUT_LEFT);
+      let dRight = Math.abs(predict - OUTPUT_RIGHT);
+      if (dLeft < OUTPUT_THRESHOLD) {
+          //n1.rotate(false);
+      } else if (dRight < OUTPUT_THRESHOLD) {
+          //n1.rotate(true);
+      } else {
+          //n1.rot = 0; // stop rotating
+      }
+
+      n1.manageShipAngle();
+      //n1.moveForward();
       n1.draw();
       t.draw();
 
+      // rotate the follower
+      n1.angle += n1.rot;
 
-
+      // DRAW testPoints
+      for (var i = 0; i < testPoints.length; i++) {
+        testPoint(testPoints[i][0], testPoints[i][1], testPoints[i][2],  testPoints[i][3]);
+      }
     }, 1000 / FPS);
 }
-
 
 
 
@@ -145,11 +193,87 @@ function drawCircle(x, y, size, color){
     ctx.closePath();
 }
 
+
+
+
+
+function angleToPoint(x, y, bearing, targetX, targetY) {
+  let angleToTarget = Math.atan2(-targetY + y, targetX - x);
+  let diff = bearing - angleToTarget;
+  return (diff + Math.PI * 2) % (Math.PI * 2);
+}
+console.log(angleToPoint(0, 0, 0, 0, 10));
+function normalizeInput(fx, fy, fa, tx, ty){
+  // normalize the values to inbetween 0 and 1
+  let input = [];
+
+  input[0] = fx / canvas.width;
+  input[1] = fy / canvas.height;
+
+  input[2] = fa / (Math.PI * 2);
+
+  input[3] = tx / canvas.width;
+  input[4] = ty / canvas.height;
+
+  return input;
+
+}
+
 animate();
 
 
+var nn = new NeuralNetwork(NUM_INPUTS, NUM_HIDDEN, NUM_OUTPUTS);
 
-nn = new NeuralNetwork(NUM_INPUTS, NUM_HIDDEN, NUM_OUTPUTS);
-console.table(nn.weights0.data);
-console.table(nn.weights1.data);
-nn.train([0,1], [1]);
+//train the network
+
+let fx, fy, fa, tx, ty;
+for (let i = 0; i < NUM_SAMPLES; i++) {
+  // random target locations
+  //tx = Math.random() * canvas.width;
+  //ty = Math.random() * canvas.height;
+  tx = Math.random() * canvas.width;
+  ty = Math.random() * canvas.width;
+
+  // random follower location and angle
+  fa = Math.random() * Math.PI * 2;
+  fx = 400;
+  fy = 400;
+
+  // calculate the angle to the target
+  let angle = angleToPoint(fx, fy, fa, tx, ty);
+
+  // determine the direction to turn
+  let direction = angle > Math.PI ? OUTPUT_LEFT : OUTPUT_RIGHT;
+
+  if(i % 10000 == 0){
+    testPoints.push([fx, fy, "red", ""]);
+    var data = " a:" + fa+ " output " + Math.round(angle) +" d: " + direction;
+    testPoints.push([tx, ty, "blue", data]);
+    console.log("f: ("+ fx + ", " + fy + ")  t: " + tx + ", " + ty + ") ");
+    console.log("angle: " + angle);
+    console.log("d: " + direction);
+
+  }
+  // train the Network
+  nn.train(normalizeInput(fx, fy, fa, tx, ty), [direction]);
+}
+
+
+
+
+
+function testPoint(x,y, color, data){
+  var canvas = document.getElementById('canvas');
+  if (canvas.getContext) {
+    var ctx = canvas.getContext('2d');
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, 2 * Math.PI);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "black";
+    ctx.font = "10px Arial";
+    ctx.fillText(data, x, y);
+
+  }
+}
